@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Linq;
 using UnityEngine;
+using UnityEngine.XR;
 using VRUIControls;
 
 namespace BeatSaberMarkupLanguage.FloatingScreen
@@ -46,26 +47,38 @@ namespace BeatSaberMarkupLanguage.FloatingScreen
 
         protected virtual void Update()
         {
-            VRPointer pointer = _vrPointer;
-            if (pointer?.vrController != null)
-                if (pointer.vrController.triggerValue > 0.9f || Input.GetMouseButton(0))
-                {
-                    if (_grabbingController != null) return;
-                    if (Physics.Raycast(pointer.vrController.position, pointer.vrController.forward, out RaycastHit hit, MaxLaserDistance))
-                    {
-                        if (hit.transform != _screenHandle) return;
-                        _grabbingController = pointer.vrController;
-                        _grabPos = pointer.vrController.transform.InverseTransformPoint(_floatingScreen.transform.position);
-                        _grabRot = Quaternion.Inverse(pointer.vrController.transform.rotation) * _floatingScreen.transform.rotation;
-                        _floatingScreen.OnHandleGrab(pointer);
-                        OnGrab?.Invoke(_floatingScreen.transform.position, _floatingScreen.transform.rotation);
-                    }
-                }
+            var pointer = _vrPointer;
 
+            if (pointer == null || pointer.lastSelectedVrController == null)
+                return;
+
+            if (pointer.lastSelectedVrController.triggerValue > 0.9f || Input.GetMouseButton(0))
+            {
+                if (_grabbingController != null)
+                    return;
+                
+                if (Physics.Raycast(pointer.lastSelectedVrController.position, pointer.lastSelectedVrController.forward,
+                        out RaycastHit hit, MaxLaserDistance))
+                {
+                    if (hit.transform != _screenHandle)
+                        return;
+                    
+                    _grabbingController = pointer.lastSelectedVrController;
+                    _grabPos = pointer.lastSelectedVrController.transform.InverseTransformPoint(_floatingScreen
+                        .transform.position);
+                    _grabRot = Quaternion.Inverse(pointer.lastSelectedVrController.transform.rotation) *
+                               _floatingScreen.transform.rotation;
+                    _floatingScreen.OnHandleGrab(pointer);
+                    OnGrab?.Invoke(_floatingScreen.transform.position, _floatingScreen.transform.rotation);
+                }
+            }
+            
             if (_grabbingController == null || !IsFpfc && _grabbingController.triggerValue > 0.9f ||
                 IsFpfc && Input.GetMouseButton(0)) return;
+
             _grabbingController = null;
             _floatingScreen.OnHandleReleased(pointer);
+
             OnRelease?.Invoke(_floatingScreen.transform.position, _floatingScreen.transform.rotation);
         }
 
@@ -81,27 +94,37 @@ namespace BeatSaberMarkupLanguage.FloatingScreen
 
         protected virtual void LateUpdate()
         {
-            if (_grabbingController != null)
-            {
-                float diff = _grabbingController.verticalAxisValue * Time.unscaledDeltaTime;
-                if (_grabPos.magnitude > MinScrollDistance)
-                {
-                    _grabPos -= Vector3.forward * diff;
-                }
-                else
-                {
-                    _grabPos -= Vector3.forward * Mathf.Clamp(diff, float.MinValue, 0);
-                }
-                _realPos = _grabbingController.transform.TransformPoint(_grabPos);
-                _realRot = _grabbingController.transform.rotation * _grabRot;
-            }
-            else return;
+            if (_grabbingController == null)
+                return;
 
+            float diff = GetVerticalAxisValue(_grabbingController.node) * Time.unscaledDeltaTime;
             
-            _floatingScreen.transform.position = Vector3.Lerp(_floatingScreen.transform.position, _realPos, 10 * Time.unscaledDeltaTime);
+            if (_grabPos.magnitude > MinScrollDistance)
+            {
+                _grabPos -= Vector3.forward * diff;
+            }
+            else
+            {
+                _grabPos -= Vector3.forward * Mathf.Clamp(diff, float.MinValue, 0);
+            }
 
-            _floatingScreen.transform.rotation = Quaternion.Slerp(_floatingScreen.transform.rotation, _realRot, 5 * Time.unscaledDeltaTime);
-              
+            _realPos = _grabbingController.transform.TransformPoint(_grabPos);
+            _realRot = _grabbingController.transform.rotation * _grabRot;
+
+            _floatingScreen.transform.position = Vector3.Lerp(_floatingScreen.transform.position, _realPos,
+                10 * Time.unscaledDeltaTime);
+            _floatingScreen.transform.rotation = Quaternion.Slerp(_floatingScreen.transform.rotation, _realRot,
+                5 * Time.unscaledDeltaTime);
+        }
+
+        private static float GetVerticalAxisValue(XRNode node)
+        {
+            return node switch
+            {
+                XRNode.LeftHand => Input.GetAxis("VerticalLeftHand"),
+                XRNode.RightHand => Input.GetAxis("VerticalRightHand"),
+                _ => 0f
+            };
         }
     }
 }
